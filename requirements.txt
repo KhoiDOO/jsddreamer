@@ -41,15 +41,3 @@ git+https://github.com/openai/CLIP.git
 
 #controlnet
 controlnet_aux
-
-open3d
-trimesh
-pyrender
-Pillow
-image-reward
-openai
-backoff
-salesforce-lavis
-seaborn
-
-google-genai

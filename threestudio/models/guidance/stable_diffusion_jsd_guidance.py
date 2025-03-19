@@ -176,6 +176,7 @@ class StableDiffusionJSDGuidance(BaseObject):
         text_embeddings: Optional[Float[Tensor, "..."]] = None,
     ):
         batch_size = elevation.shape[0]
+        t = t.repeat([batch_size])
 
         if prompt_utils.use_perp_neg:
             text_embeddings, neg_guidance_weights = prompt_utils.get_text_embeddings_perp_neg(
@@ -228,80 +229,24 @@ class StableDiffusionJSDGuidance(BaseObject):
                 noise_pred_text - noise_pred_uncond
             )
 
-        return noise_pred, neg_guidance_weights, text_embeddings
-
-    def ddim_inversion_step(self, model_output: torch.FloatTensor, timestep: int, prev_timestep: int, sample: torch.FloatTensor) -> torch.FloatTensor:
-        # 1. compute alphas, betas
-        # change original implementation to exactly match noise levels for analogous forward process
-        alpha_prod_t = (
-            self.inverse_scheduler.alphas_cumprod[timestep]
-            if timestep >= 0
-            else self.inverse_scheduler.initial_alpha_cumprod
-        )
-        alpha_prod_t_prev = self.inverse_scheduler.alphas_cumprod[prev_timestep]
-
-        beta_prod_t = 1 - alpha_prod_t
-
-        # 2. compute predicted original sample from predicted noise also called
-        # "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        if self.inverse_scheduler.config.prediction_type == "epsilon":
-            pred_original_sample = (
-                sample - beta_prod_t ** (0.5) * model_output
-            ) / alpha_prod_t ** (0.5)
-            pred_epsilon = model_output
-        elif self.inverse_scheduler.config.prediction_type == "sample":
-            pred_original_sample = model_output
-            pred_epsilon = (
-                sample - alpha_prod_t ** (0.5) * pred_original_sample
-            ) / beta_prod_t ** (0.5)
-        elif self.inverse_scheduler.config.prediction_type == "v_prediction":
-            pred_original_sample = (alpha_prod_t**0.5) * sample - (
-                beta_prod_t**0.5
-            ) * model_output
-            pred_epsilon = (alpha_prod_t**0.5) * model_output + (
-                beta_prod_t**0.5
-            ) * sample
-        else:
-            raise ValueError(
-                f"prediction_type given as {self.inverse_scheduler.config.prediction_type} must be one of `epsilon`, `sample`, or"
-                " `v_prediction`"
-            )
-        # 3. Clip or threshold "predicted x_0"
-        if self.inverse_scheduler.config.clip_sample:
-            pred_original_sample = pred_original_sample.clamp(
-                -self.inverse_scheduler.config.clip_sample_range,
-                self.inverse_scheduler.config.clip_sample_range,
-            )
-        # 4. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        pred_sample_direction = (1 - alpha_prod_t_prev) ** (0.5) * pred_epsilon
-
-        # 5. compute x_t without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        prev_sample = (
-            alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
-        )
-
-        # 6. Add noise to the sample
-        variance = self.scheduler._get_variance(prev_timestep, timestep) ** (0.5)
-        prev_sample += self.cfg.inversion_eta * torch.randn_like(prev_sample) * variance
-
-        return prev_sample
+        return noise_pred
 
     @torch.no_grad()
     def get_inversion_timesteps(self, final_t):
         n_training_steps = self.inverse_scheduler.config.num_train_timesteps
 
-        ratio = self.cfg.inversion_n_steps // n_training_steps
-        inverse_ratio = n_training_steps // self.cfg.inversion_n_steps
-        
+        ratio = n_training_steps // self.cfg.inversion_n_steps
         inverse_timesteps: torch.Tensor = torch.arange(0, self.cfg.inversion_n_steps) * ratio
         inverse_timesteps = inverse_timesteps.round().to(device=self.device, dtype=torch.long)
+        inverse_timesteps += self.inverse_scheduler.config.steps_offset
     
         inverse_timesteps = inverse_timesteps[inverse_timesteps < int(final_t)]
-        inverse_timesteps = torch.cat([inverse_timesteps[0] - ratio, inverse_timesteps])
+        inverse_timesteps = torch.cat([inverse_timesteps[0].unsqueeze(0) - ratio, inverse_timesteps])
 
-        delta_t = int(random.random() * inverse_ratio)
+        delta_t = int(random.random() * ratio)
         last_t = torch.tensor([min(int(final_t) + delta_t, n_training_steps - 1)]).to(device=self.device)
-        inverse_timesteps = torch.cat([inverse_timesteps, last_t])
+        inverse_timesteps = torch.cat([inverse_timesteps, last_t]) 
+
         return inverse_timesteps
 
     @torch.no_grad()
