@@ -230,13 +230,7 @@ class StableDiffusionJSDGuidance(BaseObject):
 
         return noise_pred, neg_guidance_weights, text_embeddings
 
-    def ddim_inversion_step(
-        self,
-        model_output: torch.FloatTensor,
-        timestep: int,
-        prev_timestep: int,
-        sample: torch.FloatTensor,
-    ) -> torch.FloatTensor:
+    def ddim_inversion_step(self, model_output: torch.FloatTensor, timestep: int, prev_timestep: int, sample: torch.FloatTensor) -> torch.FloatTensor:
         # 1. compute alphas, betas
         # change original implementation to exactly match noise levels for analogous forward process
         alpha_prod_t = (
@@ -292,79 +286,62 @@ class StableDiffusionJSDGuidance(BaseObject):
 
         return prev_sample
 
-    def get_inversion_timesteps(self, invert_to_t, B):
+    @torch.no_grad()
+    def get_inversion_timesteps(self, final_t):
         n_training_steps = self.inverse_scheduler.config.num_train_timesteps
-        effective_n_inversion_steps = self.cfg.inversion_n_steps
 
-        if self.inverse_scheduler.config.timestep_spacing == "leading":
-            step_ratio = n_training_steps // effective_n_inversion_steps
-            timesteps = (
-                (np.arange(0, effective_n_inversion_steps) * step_ratio)
-                .round()
-                .copy()
-                .astype(np.int64)
-            )
-            timesteps += self.inverse_scheduler.config.steps_offset
-        elif self.inverse_scheduler.config.timestep_spacing == "trailing":
-            step_ratio = n_training_steps / effective_n_inversion_steps
-            timesteps = np.round(
-                np.arange(n_training_steps, 0, -step_ratio)[::-1]
-            ).astype(np.int64)
-            timesteps -= 1
-        else:
-            raise ValueError(
-                f"{self.config.timestep_spacing} is not supported. Please make sure to choose one of 'leading' or 'trailing'."
-            )
-        # use only timesteps before invert_to_t
-        timesteps = timesteps[timesteps < int(invert_to_t)]
+        ratio = self.cfg.inversion_n_steps // n_training_steps
+        inverse_ratio = n_training_steps // self.cfg.inversion_n_steps
+        
+        inverse_timesteps: torch.Tensor = torch.arange(0, self.cfg.inversion_n_steps) * ratio
+        inverse_timesteps = inverse_timesteps.round().to(device=self.device, dtype=torch.long)
+    
+        inverse_timesteps = inverse_timesteps[inverse_timesteps < int(final_t)]
+        inverse_timesteps = torch.cat([inverse_timesteps[0] - ratio, inverse_timesteps])
 
-        # Roll timesteps array by one to reflect reversed origin and destination semantics for each step
-        timesteps = np.concatenate([[int(timesteps[0] - step_ratio)], timesteps])
-        timesteps = torch.from_numpy(timesteps).to(self.device)
-
-        # Add the last step
-        delta_t = int(
-            random.random()
-            * self.inverse_scheduler.config.num_train_timesteps
-            // self.cfg.inversion_n_steps
-        )
-        last_t = torch.tensor(
-            min(  # timesteps[-1] + self.inverse_scheduler.config.num_train_timesteps // self.inverse_scheduler.num_inference_steps,
-                invert_to_t + delta_t,
-                self.inverse_scheduler.config.num_train_timesteps - 1,
-            ),
-            device=self.device,
-        )
-        timesteps = torch.cat([timesteps, last_t.repeat([B])])
-        return timesteps
+        delta_t = int(random.random() * inverse_ratio)
+        last_t = torch.tensor([min(int(final_t) + delta_t, n_training_steps - 1)]).to(device=self.device)
+        inverse_timesteps = torch.cat([inverse_timesteps, last_t])
+        return inverse_timesteps
 
     @torch.no_grad()
-    def invert_noise(self, latents, invert_to_t, prompt_utils, elevation, azimuth, camera_distances):
+    def inversion(self, latents, final_t, prompt_utils, elevation, azimuth, camera_distances):
         latents = latents.clone()
-        B = latents.shape[0]
 
-        timesteps = self.get_inversion_timesteps(invert_to_t, B)
-        for t, next_t in zip(timesteps[:-1], timesteps[1:]):
-            noise_pred, _, _ = self.get_noise_pred(
-                latents,
-                t.repeat([B]),
-                prompt_utils,
-                elevation,
-                azimuth,
-                camera_distances,
+        inverse_timesteps = self.get_inversion_timesteps(final_t)
+        for t, next_t in zip(inverse_timesteps[:-1], inverse_timesteps[1:]):
+            noise_pred = self.get_noise_pred(latents, t, prompt_utils, elevation, azimuth, camera_distances,
                 guidance_scale=self.cfg.inversion_guidance_scale,
             )
-            latents = self.ddim_inversion_step(noise_pred, t, next_t, latents)
+
+            if t >= 0:
+                alpha_cumprod_t = self.inverse_scheduler.alphas_cumprod[t]
+            else:
+                alpha_cumprod_t = self.inverse_scheduler.initial_alpha_cumprod
+            
+            alpha_cumprod_t_next = self.inverse_scheduler.alphas_cumprod[next_t]
+
+            beta_prod_t = 1 - alpha_cumprod_t
+
+            x_0_pred = (latents - beta_prod_t ** (0.5) * noise_pred) / alpha_cumprod_t ** (0.5)
+
+            if self.inverse_scheduler.config.clip_sample:
+                x_0_pred = x_0_pred.clamp(
+                    -self.inverse_scheduler.config.clip_sample_range,
+                    self.inverse_scheduler.config.clip_sample_range,
+                )
+            
+            x_t_pred = (1 - alpha_cumprod_t_next) ** (0.5) * noise_pred
+
+            latents = alpha_cumprod_t_next ** (0.5) * x_0_pred + x_t_pred
+
+            sigma_t = self.scheduler._get_variance(next_t, t) ** (0.5)
+            latents += self.cfg.inversion_eta * torch.randn_like(latents) * sigma_t
 
         return latents
 
-    def get_x0(self, original_samples, noise_pred, t):
-        step_results = self.scheduler.step(noise_pred, t[0], original_samples, return_dict=True)
-        if "pred_original_sample" in step_results:
-            return step_results["pred_original_sample"]
-        elif "denoised" in step_results:
-            return step_results["denoised"]
-        raise ValueError("Looks like the scheduler does not compute x0")
+    def sample_origin(self, original_samples, noise_pred, t):
+        return self.scheduler.step(noise_pred, t[0], original_samples, return_dict=True)["pred_original_sample"]
 
     @torch.no_grad()
     def compute_grad_jsd(
@@ -377,9 +354,9 @@ class StableDiffusionJSDGuidance(BaseObject):
         camera_distances: Float[Tensor, "B"],
         global_step: int
     ):
-        latents_noisy, noise = self.invert_noise(latents, t, prompt_utils, elevation, azimuth, camera_distances)
+        latents_noisy = self.inversion(latents, t, prompt_utils, elevation, azimuth, camera_distances)
 
-        noise_pred, neg_guidance_weights, _ = self.get_noise_pred(
+        noise_pred = self.get_noise_pred(
             latents_noisy=latents_noisy, 
             t=t, 
             prompt_utils=prompt_utils, 
@@ -389,7 +366,7 @@ class StableDiffusionJSDGuidance(BaseObject):
             guidance_scale=self.cfg.guidance_scale,
         )
 
-        latents_denoised_high_density = self.get_x0(latents_noisy, noise_pred, t).detach()
+        latents_denoised_high_density = self.sample_origin(latents_noisy, noise_pred, t).detach()
 
         if self.cfg.k > 0 and global_step >= self.cfg.warm_step:
             latents_denoised_high_density_noisy = self.scheduler.add_noise(
@@ -397,7 +374,7 @@ class StableDiffusionJSDGuidance(BaseObject):
                 torch.randn_like(latents_denoised_high_density), 
                 t
             )
-            noise_pred_lower_density, _, _ = self.get_noise_pred(
+            noise_pred_lower_density = self.get_noise_pred(
                 latents_denoised_high_density_noisy, 
                 t, 
                 prompt_utils,
@@ -406,7 +383,7 @@ class StableDiffusionJSDGuidance(BaseObject):
                 camera_distances, 
                 guidance_scale=self.cfg.guidance_scale
             )
-            latents_denoised_noisy_denoised = self.get_x0(
+            latents_denoised_noisy_denoised = self.sample_origin(
                 latents_denoised_high_density_noisy, 
                 noise_pred_lower_density, 
                 t
