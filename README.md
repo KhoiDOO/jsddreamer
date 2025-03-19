@@ -59,55 +59,65 @@ source .env/bin/activate
 pip install -U pip wheel
 pip3 install torch torchvision torchaudio # isntall Pytorch
 pip install -r requirements.txt
-pip install accelerate mediapipe tomesd # install support package
+pip install accelerate mediapipe tomesd # install the support packages
 ```
 
 ## Experiments
-- For generating 3D objecst given a text prompt
+- For generating 3D objects given a text prompt
 ```shell
 # Short prompt
-python launch.py --config configs/jsdlr.yaml --train --gpu 0 seed=7 system.prompt_processor.prompt="A pair of polka-dotted sneakers"
+python launch.py --config configs/jsdlr.yaml --train --gpu 0 seed=7 \
+      system.prompt_processor.prompt="A pair of polka-dotted sneakers"
 
 # Long prompt
-python launch.py --config configs/jsdlr.yaml --train --gpu 0 seed=0 system.prompt_processor.prompt="A small, hollow, asymmetrical birdhouse, painted in cheerful colors, with a round entrance and a tiny perch, swaying gently in a backyard apple tree"
-
+python launch.py --config configs/jsdlr.yaml --train --gpu 0 seed=0 \
+      system.prompt_processor.prompt="A small, hollow, asymmetrical birdhouse, painted in cheerful colors, \
+      with a round entrance and a tiny perch, swaying gently in a backyard apple tree"
 ```
 
-- For generating 3D objecst with complex surroundings
+- For generating 3D objects with complex surroundings
 ```shell
-python launch.py --config configs/jsdlr-surr.yaml --train --gpu 0 seed=0 system.prompt_processor.prompt="A medium-sized, layered, radially symmetrical conch shell, with a rough texture on the outside, fading from pink to cream, sitting alone on a sandy beach"
+python launch.py --config configs/jsdlr-surr.yaml --train --gpu 0 seed=0 \
+      system.prompt_processor.prompt="A medium-sized, layered, radially symmetrical conch shell, \
+      with a rough texture on the outside, fading from pink to cream, sitting alone on a sandy beach"
 
-python launch.py --config configs/jsdlr-surr.yaml --train --gpu 0 seed=0 system.prompt_processor.prompt="A compact, cylindrical, vintage pepper mill, with a polished, ornate brass body, slightly worn from use, placed beside a porcelain plate on a checkered tablecloth"
+python launch.py --config configs/jsdlr-surr.yaml --train --gpu 0 seed=0 \
+      system.prompt_processor.prompt="A compact, cylindrical, vintage pepper mill, with a polished, \
+      ornate brass body, slightly worn from use, placed beside a porcelain plate on a checkered tablecloth"
 ```
 
 - For generative diverse 3D object
 
 ```shell
 # Short prompt
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=0 system.prompt_processor.prompt="A large multi-layered symmetrical wedding cake"
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=1 system.prompt_processor.prompt="A large multi-layered symmetrical wedding cake"
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=2 system.prompt_processor.prompt="A large multi-layered symmetrical wedding cake"
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=3 system.prompt_processor.prompt="A large multi-layered symmetrical wedding cake"
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=4 system.prompt_processor.prompt="A large multi-layered symmetrical wedding cake"
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=5 system.prompt_processor.prompt="A large multi-layered symmetrical wedding cake"
+PROMPT="A large multi-layered symmetrical wedding cake"
+
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=0 system.prompt_processor.prompt="$PROMPT"
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=1 system.prompt_processor.prompt="$PROMPT"
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=2 system.prompt_processor.prompt="$PROMPT"
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=3 system.prompt_processor.prompt="$PROMPT"
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=4 system.prompt_processor.prompt="$PROMPT"
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=5 system.prompt_processor.prompt="$PROMPT"
+
+LONG_PROMPT="A large, multi-layered, symmetrical wedding cake, with smooth fondant, delicate piping, '
+      and lifelike sugar flowers in full bloom, displayed on a silver stand"
 
 # Long prompt
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=0 system.prompt_processor.prompt="A large, multi-layered, symmetrical wedding cake, with smooth fondant, delicate piping, and lifelike sugar flowers in full bloom, displayed on a silver stand"
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=1 system.prompt_processor.prompt="A large, multi-layered, symmetrical wedding cake, with smooth fondant, delicate piping, and lifelike sugar flowers in full bloom, displayed on a silver stand"
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=2 system.prompt_processor.prompt="A large, multi-layered, symmetrical wedding cake, with smooth fondant, delicate piping, and lifelike sugar flowers in full bloom, displayed on a silver stand"
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=3 system.prompt_processor.prompt="A large, multi-layered, symmetrical wedding cake, with smooth fondant, delicate piping, and lifelike sugar flowers in full bloom, displayed on a silver stand"
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=4 system.prompt_processor.prompt="A large, multi-layered, symmetrical wedding cake, with smooth fondant, delicate piping, and lifelike sugar flowers in full bloom, displayed on a silver stand"
-python launch.py --config configs/asd.yaml --train --gpu 0 seed=5 system.prompt_processor.prompt="A large, multi-layered, symmetrical wedding cake, with smooth fondant, delicate piping, and lifelike sugar flowers in full bloom, displayed on a silver stand"
-
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=0 system.prompt_processor.prompt="$LONG_PROMPT"
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=1 system.prompt_processor.prompt="$LONG_PROMPT"
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=2 system.prompt_processor.prompt="$LONG_PROMPT"
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=3 system.prompt_processor.prompt="$LONG_PROMPT"
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=4 system.prompt_processor.prompt="$LONG_PROMPT"
+python launch.py --config configs/asd.yaml --train --gpu 0 seed=5 system.prompt_processor.prompt="$LONG_PROMPT"
 ```
 
 
 ## Acknowledgments
-This reporsitory is built based on [ThreeStudio](https://github.com/threestudio-project/threestudio/tree/main) framework. Otherwise, we leverage [T3Bench](https://t3bench.com/) as the main benchmark for quality and alignment evaluation. The diversity evaluation is constructed based on [DiverseDream](https://github.com/VinAIResearch/DiverseDream).
+This repository is built based on [ThreeStudio](https://github.com/threestudio-project/threestudio/tree/main) framework. Otherwise, we leverage [T3Bench](https://t3bench.com/) as the main benchmark for quality and alignment evaluation. The diversity evaluation is constructed based on [DiverseDream](https://github.com/VinAIResearch/DiverseDream).
 
 This project is supported by Research Ireland under the Research Ireland Frontiers for the Future Programme - Project, award number 22/FFP-P/11522.
 
-Overall, thank you so much to the authors for their great works and efforts to release source code and pre-trained weights.
+Overall, thank you so much to the authors for their great work and efforts to release source code and pre-trained weights.
 
 ## Contacts
 If you have any questions, please drop an email to _khoido8899@gmail.com_ or open an issue in this repository.
