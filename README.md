@@ -66,7 +66,7 @@ pip install accelerate mediapipe tomesd # install the support packages
 - For generating 3D objects given a text prompt
 ```shell
 # Short prompt
-python launch.py --config configs/jsdlr.yaml --train --gpu 0 seed=7 \
+python launch.py --config configs/jsdlr.yaml --train --gpu 0 seed=0 \
       system.prompt_processor.prompt="A pair of polka-dotted sneakers"
 
 # Long prompt
